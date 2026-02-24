@@ -1,36 +1,35 @@
 provider "aws" {
-  region = "us-east-1"
+  region = "ap-south-1"
 }
 
-resource "aws_eks_cluster" "hospitality_cluster" {
-  name     = "hospitality-eks-cluster"
-  role_arn = aws_iam_role.eks_cluster_role.arn
+# Security Group (allow SSH)
+resource "aws_security_group" "ssh_access" {
+  name        = "allow_ssh"
+  description = "Allow SSH access"
 
-  vpc_config {
-    subnet_ids = ["subnet-12345678", "subnet-87654321"]
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  depends_on = [
-    aws_iam_role_policy_attachment.eks_cluster_policy
-  ]
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }
 
-resource "aws_iam_role" "eks_cluster_role" {
-  name = "hospitality-eks-role"
+# EC2 Instance
+resource "aws_instance" "hospitality_server" {
+  ami                    = "ami-03f4878755434977f"
+  instance_type          = "t3.micro"
+  key_name               = "hospatility-key"
+  vpc_security_group_ids = [aws_security_group.ssh_access.id]
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "eks.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.eks_cluster_role.name
+  tags = {
+    Name = "hospitality-terraform-server"
+  }
 }
