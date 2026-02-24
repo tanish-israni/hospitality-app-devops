@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 
-app = FastAPI(title="Hospitality App", version="1.0.0")
+app = FastAPI(title="Hospitality App", version="1.0.1")
 
 # Enable CORS for all origins (safe for internal APIs)
 app.add_middleware(
