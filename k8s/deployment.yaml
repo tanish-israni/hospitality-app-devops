@@ -22,8 +22,8 @@ spec:
     spec:
       containers:
         - name: hospitality-api
-          image: hospitality-api:latest
-          imagePullPolicy: IfNotPresent
+          image: tanish9977/hospitality-api:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           readinessProbe:
