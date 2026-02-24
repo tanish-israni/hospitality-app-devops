@@ -8,7 +8,9 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      IMAGE_NAME: hospitality-api
+      IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/hospitality-api
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
       KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG_CONTENT }}
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -20,20 +22,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image
-        run: docker build -t $IMAGE_NAME:${{ github.sha }} .
-
-      - name: Save image
-        run: docker save $IMAGE_NAME:${{ github.sha }} -o image.tar
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
+      - name: Docker login
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' }}
+        uses: docker/login-action@v3
         with:
-          name: image
-          path: image.tar
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+
+      - name: Build and push image
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' }}
+        run: |
+          docker build -t $IMAGE_NAME:${{ github.sha }} -t $IMAGE_NAME:latest .
+          docker push $IMAGE_NAME:${{ github.sha }}
+          docker push $IMAGE_NAME:latest
 
       - name: Configure AWS credentials
-        if: ${{ env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' && env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
@@ -41,25 +45,29 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Set up kubectl
-        if: ${{ env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' && env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
         uses: azure/setup-kubectl@v4
         with:
-          version: "v1.29.0"
+          version: "v1.34.0"
 
       - name: Configure kubeconfig
-        if: ${{ env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' && env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
         run: |
           mkdir -p $HOME/.kube
-          echo "${KUBECONFIG_CONTENT}" > $HOME/.kube/config
+          echo "${KUBECONFIG_CONTENT}" | base64 -d > $HOME/.kube/config
 
       - name: Deploy manifests
-        if: ${{ env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' && env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
         run: kubectl apply -f k8s/
 
       - name: Update deployment image
-        if: ${{ env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' && env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
         run: kubectl set image deployment/hospitality-api hospitality-api=$IMAGE_NAME:${{ github.sha }}
 
+      - name: Wait for rollout
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' && env.KUBECONFIG_CONTENT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.AWS_REGION != '' }}
+        run: kubectl rollout status deployment/hospitality-api --timeout=5m
+
       - name: Skip deploy (missing credentials)
-        if: ${{ env.KUBECONFIG_CONTENT == '' || env.AWS_ACCESS_KEY_ID == '' || env.AWS_SECRET_ACCESS_KEY == '' || env.AWS_REGION == '' }}
-        run: echo "Missing KUBECONFIG_CONTENT or AWS credentials; skipping Kubernetes deploy."
+        if: ${{ env.DOCKER_USERNAME == '' || env.DOCKER_PASSWORD == '' || env.KUBECONFIG_CONTENT == '' || env.AWS_ACCESS_KEY_ID == '' || env.AWS_SECRET_ACCESS_KEY == '' || env.AWS_REGION == '' }}
+        run: echo "Missing DOCKER_USERNAME/DOCKER_PASSWORD/KUBECONFIG_CONTENT/AWS secrets; skipping Kubernetes deploy."
